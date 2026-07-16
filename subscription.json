@@ -1,1 +1,8 @@
-REPLACE_ME_AFTER_SUBSCRIBING
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/cCF_2zMbBSA:APA91bH-mb2KpDpW8mBcUIhkTlVWI_YIoaO6rE0skYyxkyMsJ4dACObk-XO92p06_GSYCPIl3D4yfRkLJXgzfq5xHN1hkTh8KOqXr2rxBKvwx2K-zrmFwx2DpMPwK-ZGs41UsBdKWKCe",
+  "expirationTime": null,
+  "keys": {
+    "p256dh": "BKP2_Wayp-uG_jD-jhY3oIaac76e3bpKAx6mWSpjwtRM_k3nTrA63e6Y3niRtNkbw041rkNfLojFnwrcENny9Ts",
+    "auth": "SpBfwGXkzdLfipj-uk73Iw"
+  }
+}
