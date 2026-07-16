@@ -151,6 +151,22 @@
   footer{margin-top:1.75rem;color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);padding-top:1rem}
   footer p{margin:.3rem 0}
 
+  .notify-status{
+    margin-top:.7rem;padding:.6rem .7rem;border-radius:10px;font-size:.9rem;font-weight:600
+  }
+  .notify-status.ok{background:#E4F1E8;color:#1E5B31;border:1px solid #B9DCC3}
+  .notify-status.warn{background:var(--warn-bg);color:var(--warn-ink);border:1px solid var(--warn-line)}
+  .notify-status.err{background:#FBEAEA;color:#7A2222;border:1px solid #E9BFBF}
+  .notify-status:empty{display:none}
+  .sub-json{
+    margin-top:.7rem;background:#0F1216;color:#D9E0E6;border-radius:10px;padding:.7rem;
+    font-size:.78rem;line-height:1.4;overflow-x:auto;white-space:pre-wrap;word-break:break-all
+  }
+  .step{margin-top:1rem;padding-top:.9rem;border-top:1px dashed var(--line)}
+  .step h3{margin:0 0 .3rem;font-size:.92rem}
+  ol.steps{margin:.4rem 0 0;padding-left:1.2rem}
+  ol.steps li{margin-bottom:.4rem}
+
   a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{
     outline:3px solid var(--focus);outline-offset:2px;border-radius:8px
   }
@@ -226,6 +242,41 @@
           <button type="button" class="ghost" id="clear-btn">Reset to verified calendar</button>
         </div>
         <p class="saved-note" id="saved-note" role="status" aria-live="polite"></p>
+      </div>
+    </details>
+
+    <!-- Notifications -->
+    <details class="setup" id="notify-panel">
+      <summary>
+        <span id="notify-summary-text">Notifications</span>
+        <span class="chev" aria-hidden="true">▾</span>
+      </summary>
+      <div class="setup-body">
+        <p class="hint" style="margin-top:.9rem">
+          Get a phone notification the evening before collection, even when this app is closed.
+          Setup is two steps: enable it here, then paste one file into GitHub once.
+        </p>
+
+        <div class="actions">
+          <button type="button" id="notify-enable-btn">Enable notifications</button>
+        </div>
+        <p class="notify-status" id="notify-status" role="status" aria-live="polite"></p>
+
+        <div class="step" id="notify-step2" hidden>
+          <h3>Finish setup on GitHub (one-off)</h3>
+          <ol class="steps">
+            <li>Tap <strong>Copy</strong> below.</li>
+            <li>Tap <strong>Open subscription.json on GitHub</strong> — it opens the file already in edit mode.</li>
+            <li>Select all the existing text in the box and paste over it.</li>
+            <li>Scroll down and tap <strong>Commit changes…</strong>, then confirm.</li>
+          </ol>
+          <div class="actions">
+            <button type="button" class="ghost" id="notify-copy-btn">Copy subscription</button>
+            <a class="link" id="notify-github-link" href="#" target="_blank" rel="noopener"
+               style="align-self:center">Open subscription.json on GitHub</a>
+          </div>
+          <pre class="sub-json" id="notify-json" aria-label="Your subscription data"></pre>
+        </div>
       </div>
     </details>
 
@@ -499,6 +550,118 @@
       render(DEFAULT_CONFIG);
       updateStaleNotice();
     });
+
+    initNotifications();
+  }
+
+  // ---- push notifications ----
+  function initNotifications(){
+    var VAPID_PUBLIC_KEY = "BPJZ2LYp_de01REl2XhnBUBIZQW214efnf7BzayhG3EeGJrOsH2d0gqAhKNovnImdSskLADwTCuRra9he436Nug";
+    var btn = document.getElementById("notify-enable-btn");
+    var status = document.getElementById("notify-status");
+    var step2 = document.getElementById("notify-step2");
+    var jsonEl = document.getElementById("notify-json");
+    var copyBtn = document.getElementById("notify-copy-btn");
+    var ghLink = document.getElementById("notify-github-link");
+
+    function setStatus(kind, msg){
+      status.className = "notify-status" + (kind ? " "+kind : "");
+      status.textContent = msg;
+    }
+
+    if(location.protocol === "file:"){
+      setStatus("warn", "Notifications need this page hosted online (not opened as a local file) to work.");
+      btn.disabled = true;
+      return;
+    }
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)){
+      setStatus("warn", "This browser doesn't support push notifications. Try Chrome on Android.");
+      btn.disabled = true;
+      return;
+    }
+
+    function urlBase64ToUint8Array(base64String){
+      var padding = "=".repeat((4 - base64String.length % 4) % 4);
+      var base64 = (base64String + padding).replace(/-/g,"+").replace(/_/g,"/");
+      var raw = atob(base64);
+      var out = new Uint8Array(raw.length);
+      for(var i=0;i<raw.length;i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+
+    function buildGitHubEditUrl(){
+      // Works out of the box for a standard GitHub Pages project site
+      // (https://<owner>.github.io/<repo>/...). Falls back to github.com
+      // generically if that pattern isn't detected.
+      var host = location.hostname;
+      var owner = host.indexOf(".github.io") > -1 ? host.replace(".github.io","") : null;
+      var pathParts = location.pathname.split("/").filter(Boolean);
+      var repo = pathParts.length ? pathParts[0] : (owner ? owner + ".github.io" : null);
+      if(owner && repo){
+        return "https://github.com/" + owner + "/" + repo + "/edit/main/subscription.json";
+      }
+      return "https://github.com";
+    }
+
+    async function subscribe(){
+      setStatus(null, "");
+      btn.disabled = true;
+      btn.textContent = "Enabling…";
+      try{
+        var permission = await Notification.requestPermission();
+        if(permission !== "granted"){
+          setStatus("warn", "Notifications were blocked. Allow them in your browser's site settings to try again.");
+          btn.disabled = false;
+          btn.textContent = "Enable notifications";
+          return;
+        }
+
+        var reg = await navigator.serviceWorker.register("sw.js");
+        await navigator.serviceWorker.ready;
+
+        var existing = await reg.pushManager.getSubscription();
+        var sub = existing || await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+
+        jsonEl.textContent = JSON.stringify(sub.toJSON(), null, 2);
+        ghLink.href = buildGitHubEditUrl();
+        step2.hidden = false;
+
+        setStatus("ok", "Notifications enabled on this device. Now finish the one-off GitHub step below.");
+        btn.textContent = "Notifications enabled";
+      }catch(err){
+        console.error(err);
+        setStatus("err", "Something went wrong enabling notifications: " + (err && err.message ? err.message : err));
+        btn.disabled = false;
+        btn.textContent = "Enable notifications";
+      }
+    }
+
+    btn.addEventListener("click", subscribe);
+
+    copyBtn.addEventListener("click", async function(){
+      try{
+        await navigator.clipboard.writeText(jsonEl.textContent);
+        copyBtn.textContent = "Copied!";
+        setTimeout(function(){ copyBtn.textContent = "Copy subscription"; }, 2000);
+      }catch(e){
+        setStatus("warn", "Couldn't copy automatically — select the text above and copy manually.");
+      }
+    });
+
+    // If a previous visit already subscribed on this device, reflect that
+    // without re-prompting for permission.
+    navigator.serviceWorker.getRegistration().then(function(reg){
+      if(!reg) return;
+      reg.pushManager.getSubscription().then(function(sub){
+        if(sub){
+          setStatus("ok", "Notifications are enabled on this device.");
+          btn.textContent = "Notifications enabled";
+        }
+      });
+    }).catch(function(){});
   }
 
   if(document.readyState==="loading"){

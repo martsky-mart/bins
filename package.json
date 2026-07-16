@@ -1,0 +1,9 @@
+{
+  "name": "bin-day-notifications",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Sends a push notification the evening before bin collection.",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}
