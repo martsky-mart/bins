@@ -1,0 +1,30 @@
+name: Bin day notification
+
+on:
+  schedule:
+    # 15:00 UTC every Sunday = 4pm BST (summer) / 3pm GMT (winter).
+    # Collections are Monday mornings, so this fires the evening before.
+    # GitHub's cron scheduler is best-effort and can run a few minutes late
+    # at busy times — that's normal, not a fault.
+    - cron: "0 15 * * SUN"
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab to test
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install web-push
+        run: npm install web-push@3
+
+      - name: Send notification if tomorrow is a collection day
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+        run: node scripts/send-notification.js
